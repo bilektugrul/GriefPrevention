@@ -2729,6 +2729,7 @@ public class GriefPrevention extends JavaPlugin
         //dump any remaining unwritten log entries
         this.customLogger.WriteEntries();
 
+        getServer().getScheduler().cancelTasks(this);
         AddLogEntry("GriefPrevention disabled.");
     }
 
