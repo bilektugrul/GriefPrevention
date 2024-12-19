@@ -826,7 +826,7 @@ public class FlatFileDataStore extends DataStore
     synchronized void migrateData(DatabaseDataStore databaseStore) {
         //migrate claims
 
-        JavaPlugin plugin = JavaPlugin.getProvidingPlugin(GriefPrevention.class);
+        GriefPrevention plugin = (GriefPrevention) JavaPlugin.getProvidingPlugin(GriefPrevention.class);
 
         BukkitTask claimTask =  Bukkit.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             GriefPrevention.AddLogEntry("Starting claim convert...");
@@ -895,9 +895,11 @@ public class FlatFileDataStore extends DataStore
         {
             @Override
             public void run() {
-                GriefPrevention.AddLogEntry("Converted claim: " + convertedClaim);
-                GriefPrevention.AddLogEntry("Converted player: " + convertedPlayer);
-                GriefPrevention.AddLogEntry("Converted bonus block: " + convertedBonusBlock);
+                if (plugin.config_migration_progress_messages) {
+                    GriefPrevention.AddLogEntry("Converted claim: " + convertedClaim);
+                    GriefPrevention.AddLogEntry("Converted player: " + convertedPlayer);
+                    GriefPrevention.AddLogEntry("Converted bonus block: " + convertedBonusBlock);
+                }
 
                 if (completedClaim && completedPlayer) {
                     GriefPrevention.AddLogEntry("Data migration process complete.");

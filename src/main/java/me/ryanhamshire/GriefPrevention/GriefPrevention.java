@@ -240,6 +240,7 @@ public class GriefPrevention extends JavaPlugin
     private String databaseUserName;
     private String databasePassword;
 
+    public boolean config_migration_progress_messages;
 
     //how far away to search from a tree trunk for its branch blocks
     public static final int TREE_RADIUS = 5;
@@ -683,6 +684,8 @@ public class GriefPrevention extends JavaPlugin
         this.config_logs_debugEnabled = config.getBoolean("GriefPrevention.Abridged Logs.Included Entry Types.Debug", false);
         this.config_logs_mutedChatEnabled = config.getBoolean("GriefPrevention.Abridged Logs.Included Entry Types.Muted Chat Messages", false);
 
+        this.config_migration_progress_messages = config.getBoolean("GriefPrevention.Advanced.Migration Progress Messages", true);
+
         //claims mode by world
         for (World world : this.config_claims_worldModes.keySet())
         {
@@ -808,6 +811,9 @@ public class GriefPrevention extends JavaPlugin
         outConfig.set("GriefPrevention.Abridged Logs.Included Entry Types.Administrative Activity", this.config_logs_adminEnabled);
         outConfig.set("GriefPrevention.Abridged Logs.Included Entry Types.Debug", this.config_logs_debugEnabled);
         outConfig.set("GriefPrevention.Abridged Logs.Included Entry Types.Muted Chat Messages", this.config_logs_mutedChatEnabled);
+
+        outConfig.set("GriefPrevention.Advanced.Migration Progress Messages", config_migration_progress_messages);
+
         outConfig.set("GriefPrevention.ConfigVersion", 1);
 
         try
