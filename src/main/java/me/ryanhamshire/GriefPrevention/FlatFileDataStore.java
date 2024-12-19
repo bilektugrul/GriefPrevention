@@ -24,6 +24,9 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -395,6 +398,7 @@ public class FlatFileDataStore extends DataStore
     void loadClaimData(File[] files) throws Exception
     {
         ConcurrentHashMap<Claim, Long> orphans = new ConcurrentHashMap<>();
+        int nullClaims = 0;
         for (int i = 0; i < files.length; i++)
         {
             if (files[i].isFile())  //avoids folders
@@ -432,6 +436,11 @@ public class FlatFileDataStore extends DataStore
                 {
                     ArrayList<Long> out_parentID = new ArrayList<>();  //hacky output parameter
                     Claim claim = this.loadClaim(files[i], out_parentID, claimID);
+                    if (claim == null) {
+                        nullClaims++;
+                        continue;
+                    }
+
                     if (out_parentID.size() == 0 || out_parentID.get(0) == -1)
                     {
                         this.addClaim(claim, false);
@@ -469,9 +478,11 @@ public class FlatFileDataStore extends DataStore
                 this.addClaim(child, false);
             }
         }
+
+        GriefPrevention.AddLogEntry("Null claims: " + nullClaims);
     }
 
-    Claim loadClaim(File file, ArrayList<Long> out_parentID, long claimID) throws IOException, InvalidConfigurationException, Exception
+    Claim loadClaim(File file, ArrayList<Long> out_parentID, long claimID) throws Exception
     {
         List<String> lines = Files.readLines(file, Charset.forName("UTF-8"));
         StringBuilder builder = new StringBuilder();
@@ -487,7 +498,13 @@ public class FlatFileDataStore extends DataStore
     {
         Claim claim = null;
         YamlConfiguration yaml = new YamlConfiguration();
-        yaml.loadFromString(input);
+        try
+        {
+            yaml.loadFromString(input);
+        } catch (Exception ignored) {
+            GriefPrevention.AddLogEntry(claimID + " file is broken.");
+            return null;
+        }
 
         //boundaries
         Location lesserBoundaryCorner = this.locationFromString(yaml.getString("Lesser Boundary Corner"), validWorlds);
@@ -731,7 +748,7 @@ public class FlatFileDataStore extends DataStore
     }
 
     @Override
-    synchronized void incrementNextClaimID()
+     void incrementNextClaimID()
     {
         //increment in memory
         this.nextClaimID++;
@@ -765,7 +782,7 @@ public class FlatFileDataStore extends DataStore
 
     //grants a group (players with a specific permission) bonus claim blocks as long as they're still members of the group
     @Override
-    synchronized void saveGroupBonusBlocks(String groupName, int currentValue)
+     void saveGroupBonusBlocks(String groupName, int currentValue)
     {
         //write changes to file to ensure they don't get lost
         BufferedWriter outStream = null;
@@ -798,75 +815,127 @@ public class FlatFileDataStore extends DataStore
         catch (IOException exception) {}
     }
 
-    synchronized void migrateData(DatabaseDataStore databaseStore)
-    {
+    private volatile int convertedClaim = 0;
+    private volatile int convertedPlayer = 0;
+    private volatile int convertedBonusBlock = 0;
+    private volatile File claimsBackupFolder;
+    private volatile File playersBackupFolder;
+
+    private volatile boolean completedClaim, completedPlayer;
+
+    synchronized void migrateData(DatabaseDataStore databaseStore) {
         //migrate claims
-        for (Claim claim : this.claims)
-        {
-            databaseStore.addClaim(claim, true);
-            for (Claim child : claim.children)
+
+        JavaPlugin plugin = JavaPlugin.getProvidingPlugin(GriefPrevention.class);
+
+        BukkitTask claimTask =  Bukkit.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            GriefPrevention.AddLogEntry("Starting claim convert...");
+            for (Claim claim : this.claims)
             {
-                databaseStore.addClaim(child, true);
+                databaseStore.addClaim(claim, true);
+                int size = 1;
+                for (Claim child : claim.children)
+                {
+                    databaseStore.addClaim(child, true);
+                    size++;
+                }
+                convertedClaim += size;
             }
-        }
 
-        //migrate groups
-        for (Map.Entry<String, Integer> groupEntry : this.permissionToBonusBlocksMap.entrySet())
-        {
-            databaseStore.saveGroupBonusBlocks(groupEntry.getKey(), groupEntry.getValue());
-        }
+            GriefPrevention.AddLogEntry("Starting group convert...");
+            //migrate groups
+            for (Map.Entry<String, Integer> groupEntry : this.permissionToBonusBlocksMap.entrySet())
+            {
+                databaseStore.saveGroupBonusBlocks(groupEntry.getKey(), groupEntry.getValue());
+                ++convertedBonusBlock;
+            }
 
-        //migrate players
+            GriefPrevention.AddLogEntry("Claim convert done");
+            completedClaim = true;
+        });
+
         File playerDataFolder = new File(playerDataFolderPath);
         File[] files = playerDataFolder.listFiles();
-        for (File file : files)
+
+        BukkitTask playersTask = Bukkit.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            GriefPrevention.AddLogEntry("Starting player convert...");
+            //migrate players
+            for (File file : files)
+            {
+                if (!file.isFile()) continue;  //avoids folders
+                if (file.isHidden()) continue; //avoid hidden files, which are likely not created by GriefPrevention
+
+                //all group data files start with a dollar sign.  ignoring those, already handled above
+                if (file.getName().startsWith("$")) continue;
+
+                //ignore special files
+                if (file.getName().startsWith("_")) continue;
+                if (file.getName().endsWith(".ignore")) continue;
+
+                UUID playerID = UUID.fromString(file.getName());
+                PlayerData data = this.getPlayerData(playerID);
+                data.getAccruedClaimBlocks();
+                data.getClaims();
+                databaseStore.asyncSavePlayerData(playerID, data);
+                ++convertedPlayer;
+                this.clearCachedPlayerData(playerID);
+            }
+
+            //migrate next claim ID
+            if (this.nextClaimID > databaseStore.nextClaimID)
+            {
+                databaseStore.setNextClaimID(this.nextClaimID);
+            }
+
+            GriefPrevention.AddLogEntry("Player convert done.");
+            completedPlayer = true;
+        });
+
+        new BukkitRunnable()
         {
-            if (!file.isFile()) continue;  //avoids folders
-            if (file.isHidden()) continue; //avoid hidden files, which are likely not created by GriefPrevention
+            @Override
+            public void run() {
+                GriefPrevention.AddLogEntry("Converted claim: " + convertedClaim);
+                GriefPrevention.AddLogEntry("Converted player: " + convertedPlayer);
+                GriefPrevention.AddLogEntry("Converted bonus block: " + convertedBonusBlock);
 
-            //all group data files start with a dollar sign.  ignoring those, already handled above
-            if (file.getName().startsWith("$")) continue;
+                if (completedClaim && completedPlayer) {
+                    GriefPrevention.AddLogEntry("Data migration process complete.");
 
-            //ignore special files
-            if (file.getName().startsWith("_")) continue;
-            if (file.getName().endsWith(".ignore")) continue;
+                    //rename player and claim data folders so the migration won't run again
+                    int i = 0;
+                    do
+                    {
+                        String claimsFolderBackupPath = claimDataFolderPath;
+                        if (i > 0) claimsFolderBackupPath += String.valueOf(i);
+                        claimsBackupFolder = new File(claimsFolderBackupPath);
 
-            UUID playerID = UUID.fromString(file.getName());
-            databaseStore.savePlayerData(playerID, this.getPlayerData(playerID));
-            this.clearCachedPlayerData(playerID);
-        }
+                        String playersFolderBackupPath = playerDataFolderPath;
+                        if (i > 0) playersFolderBackupPath += String.valueOf(i);
+                        playersBackupFolder = new File(playersFolderBackupPath);
+                        i++;
+                    } while (claimsBackupFolder.exists() || playersBackupFolder.exists());
 
-        //migrate next claim ID
-        if (this.nextClaimID > databaseStore.nextClaimID)
-        {
-            databaseStore.setNextClaimID(this.nextClaimID);
-        }
+                    File claimsFolder = new File(claimDataFolderPath);
+                    File playersFolder = new File(playerDataFolderPath);
 
-        //rename player and claim data folders so the migration won't run again
-        int i = 0;
-        File claimsBackupFolder;
-        File playersBackupFolder;
-        do
-        {
-            String claimsFolderBackupPath = claimDataFolderPath;
-            if (i > 0) claimsFolderBackupPath += String.valueOf(i);
-            claimsBackupFolder = new File(claimsFolderBackupPath);
+                    claimsFolder.renameTo(claimsBackupFolder);
+                    playersFolder.renameTo(playersBackupFolder);
 
-            String playersFolderBackupPath = playerDataFolderPath;
-            if (i > 0) playersFolderBackupPath += String.valueOf(i);
-            playersBackupFolder = new File(playersFolderBackupPath);
-            i++;
-        } while (claimsBackupFolder.exists() || playersBackupFolder.exists());
+                    GriefPrevention.AddLogEntry("Final converted claim: " + convertedClaim);
+                    GriefPrevention.AddLogEntry("Final converted player: " + convertedPlayer);
+                    GriefPrevention.AddLogEntry("Final converted bonus block: " + convertedBonusBlock);
 
-        File claimsFolder = new File(claimDataFolderPath);
-        File playersFolder = new File(playerDataFolderPath);
+                    GriefPrevention.AddLogEntry("Backed your file system data up to " + claimsBackupFolder.getName() + " and " + playersBackupFolder.getName() + ".");
+                    GriefPrevention.AddLogEntry("If your migration encountered any problems, you can restore those data with a quick copy/paste.");
+                    GriefPrevention.AddLogEntry("When you're satisfied that all your data have been safely migrated, consider deleting those folders.");
 
-        claimsFolder.renameTo(claimsBackupFolder);
-        playersFolder.renameTo(playersBackupFolder);
-
-        GriefPrevention.AddLogEntry("Backed your file system data up to " + claimsBackupFolder.getName() + " and " + playersBackupFolder.getName() + ".");
-        GriefPrevention.AddLogEntry("If your migration encountered any problems, you can restore those data with a quick copy/paste.");
-        GriefPrevention.AddLogEntry("When you're satisfied that all your data have been safely migrated, consider deleting those folders.");
+                    playersTask.cancel();
+                    claimTask.cancel();
+                    this.cancel();
+                }
+            }
+        }.runTaskTimer(plugin, 1, 100);
     }
 
     @Override
