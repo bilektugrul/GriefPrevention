@@ -1200,8 +1200,8 @@ public abstract class DataStore
             //make sure player has enough blocks to make up the difference
             if (!playerData.claimResizing.isAdminClaim() && player.getName().equals(playerData.claimResizing.getOwnerName()))
             {
-                int newArea;
-                int blocksRemainingAfter;
+                long newArea;
+                long blocksRemainingAfter;
                 try
                 {
                     newArea = Math.multiplyExact(newWidth, newHeight);
@@ -1248,7 +1248,7 @@ public abstract class DataStore
         if (result.succeeded && result.claim != null)
         {
             //decide how many claim blocks are available for more resizing
-            int claimBlocksRemaining = 0;
+            long claimBlocksRemaining = 0;
             if (!playerData.claimResizing.isAdminClaim())
             {
                 UUID ownerID = playerData.claimResizing.ownerID;
@@ -1453,6 +1453,7 @@ public abstract class DataStore
         {
             //ensure player data is already read from file before trying to save
             playerData.getAccruedClaimBlocks();
+            playerData.getBonusClaimBlocks();
             playerData.getClaims();
             asyncSavePlayerData(this.playerID, this.playerData);
         }

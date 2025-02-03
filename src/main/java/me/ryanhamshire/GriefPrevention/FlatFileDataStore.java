@@ -37,6 +37,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -622,8 +623,8 @@ public class FlatFileDataStore extends DataStore
     }
 
     @Override
-    synchronized PlayerData getPlayerDataFromStorage(UUID playerID)
-    {
+    synchronized PlayerData getPlayerDataFromStorage(UUID playerID) {
+        //GriefPrevention.AddLogEntry("starting: " + playerID);
         File playerFile = new File(playerDataFolderPath + File.separator + playerID.toString());
 
         PlayerData playerData = new PlayerData();
@@ -642,9 +643,8 @@ public class FlatFileDataStore extends DataStore
                     needRetry = false;
 
                     //read the file content and immediately close it
-                    List<String> lines = Files.readLines(playerFile, Charset.forName("UTF-8"));
+                    List<String> lines = java.nio.file.Files.readAllLines(playerFile.toPath(), StandardCharsets.UTF_8);
                     Iterator<String> iterator = lines.iterator();
-
 
                     iterator.next();
                     //first line is last login timestamp //RoboMWM - not using this anymore
@@ -665,13 +665,15 @@ public class FlatFileDataStore extends DataStore
                     String accruedBlocksString = iterator.next();
 
                     //convert that to a number and store it
-                    playerData.setAccruedClaimBlocks(Integer.parseInt(accruedBlocksString));
+                    playerData.setAccruedClaimBlocks(Long.parseLong(accruedBlocksString));
 
                     //third line is any bonus claim blocks granted by administrators
                     String bonusBlocksString = iterator.next();
 
+                    //Bukkit.getScheduler().runTask(GriefPrevention.instance, () -> GriefPrevention.AddLogEntry("UUID: " + playerID + " - ACRBLKSTR: " + accruedBlocksString + " - BNSBLKSTR: " + bonusBlocksString));
+
                     //convert that to a number and store it
-                    playerData.setBonusClaimBlocks(Integer.parseInt(bonusBlocksString));
+                    playerData.setBonusClaimBlocks(Long.parseLong(bonusBlocksString));
 
                     //fourth line is a double-semicolon-delimited list of claims, which is currently ignored
                     //String claimsString = inStream.readLine();
@@ -690,7 +692,7 @@ public class FlatFileDataStore extends DataStore
                 {
                     if (needRetry) Thread.sleep(5);
                 }
-                catch (InterruptedException exception) {}
+                catch (InterruptedException ignored) {}
 
             } while (needRetry && retriesRemaining >= 0);
 
@@ -700,7 +702,7 @@ public class FlatFileDataStore extends DataStore
                 StringWriter errors = new StringWriter();
                 latestException.printStackTrace(new PrintWriter(errors));
                 GriefPrevention.AddLogEntry("Failed to load PlayerData for " + playerID + ". This usually occurs when your server runs out of storage space, causing any file saves to corrupt. Fix or delete the file in GriefPrevetionData/PlayerData/" + playerID, CustomLogEntryTypes.Debug, false);
-                GriefPrevention.AddLogEntry(playerID + " " + errors.toString(), CustomLogEntryTypes.Exception);
+                GriefPrevention.AddLogEntry(playerID + " " + errors, CustomLogEntryTypes.Exception);
             }
         }
 
@@ -724,25 +726,25 @@ public class FlatFileDataStore extends DataStore
             fileContent.append("\n");
 
             //second line is accrued claim blocks
-            fileContent.append(String.valueOf(playerData.getAccruedClaimBlocks()));
+            fileContent.append(playerData.getAccruedClaimBlocks());
             fileContent.append("\n");
 
             //third line is bonus claim blocks
-            fileContent.append(String.valueOf(playerData.getBonusClaimBlocks()));
+            fileContent.append(playerData.getBonusClaimBlocks());
             fileContent.append("\n");
 
             //fourth line is blank
             fileContent.append("\n");
 
             //write data to file
-            File playerDataFile = new File(playerDataFolderPath + File.separator + playerID.toString());
-            Files.write(fileContent.toString().getBytes("UTF-8"), playerDataFile);
+            File playerDataFile = new File(playerDataFolderPath + File.separator + playerID);
+            Files.write(fileContent.toString().getBytes(StandardCharsets.UTF_8), playerDataFile);
         }
 
         //if any problem, log it
         catch (Exception e)
         {
-            GriefPrevention.AddLogEntry("GriefPrevention: Unexpected exception saving data for player \"" + playerID.toString() + "\": " + e.getMessage());
+            GriefPrevention.AddLogEntry("GriefPrevention: Unexpected exception saving data for player \"" + playerID + "\": " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -815,9 +817,11 @@ public class FlatFileDataStore extends DataStore
         catch (IOException exception) {}
     }
 
-    private volatile int convertedClaim = 0;
-    private volatile int convertedPlayer = 0;
-    private volatile int convertedBonusBlock = 0;
+    private volatile long convertedClaim = 0;
+    private volatile long convertedPlayer = 0;
+    private volatile long convertedBonusBlock = 0;
+    private volatile boolean loadingPlayers = true;
+    private volatile int loadedPlayers = 0;
     private volatile File claimsBackupFolder;
     private volatile File playersBackupFolder;
 
@@ -847,7 +851,6 @@ public class FlatFileDataStore extends DataStore
             for (Map.Entry<String, Integer> groupEntry : this.permissionToBonusBlocksMap.entrySet())
             {
                 databaseStore.saveGroupBonusBlocks(groupEntry.getKey(), groupEntry.getValue());
-                ++convertedBonusBlock;
             }
 
             GriefPrevention.AddLogEntry("Claim convert done");
@@ -859,6 +862,8 @@ public class FlatFileDataStore extends DataStore
 
         BukkitTask playersTask = Bukkit.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             GriefPrevention.AddLogEntry("Starting player convert...");
+
+            List<PlayerData> loadedData = new ArrayList<>();
             //migrate players
             for (File file : files)
             {
@@ -873,12 +878,19 @@ public class FlatFileDataStore extends DataStore
                 if (file.getName().endsWith(".ignore")) continue;
 
                 UUID playerID = UUID.fromString(file.getName());
-                PlayerData data = this.getPlayerData(playerID);
-                data.getAccruedClaimBlocks();
-                data.getClaims();
-                databaseStore.asyncSavePlayerData(playerID, data);
-                ++convertedPlayer;
-                this.clearCachedPlayerData(playerID);
+                loadedData.add(getPlayerDataFromStorage(playerID));
+                loadedPlayers++;
+            }
+
+            loadingPlayers = false;
+
+            for (PlayerData data : loadedData)
+            {
+                databaseStore.overrideSavePlayerData(data.playerID, data);
+                //this.clearCachedPlayerData(data.playerID);
+                convertedPlayer++;
+                convertedBonusBlock += data.getBonusClaimBlocks();
+                //dataIterator.remove();
             }
 
             //migrate next claim ID
@@ -897,7 +909,12 @@ public class FlatFileDataStore extends DataStore
             public void run() {
                 if (plugin.config_migration_progress_messages) {
                     GriefPrevention.AddLogEntry("Converted claim: " + convertedClaim);
-                    GriefPrevention.AddLogEntry("Converted player: " + convertedPlayer);
+                    if (loadingPlayers) {
+                        GriefPrevention.AddLogEntry("Currently loading players: " + loadedPlayers + " loaded");
+                    } else
+                    {
+                        GriefPrevention.AddLogEntry("Converted player: " + convertedPlayer);
+                    }
                     GriefPrevention.AddLogEntry("Converted bonus block: " + convertedBonusBlock);
                 }
 

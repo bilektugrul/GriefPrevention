@@ -2140,8 +2140,8 @@ class PlayerEventHandler implements Listener
                 //if not an administrative claim, verify the player has enough claim blocks for this new claim
                 if (playerData.shovelMode != ShovelMode.Admin)
                 {
-                    int newClaimArea = newClaimWidth * newClaimHeight;
-                    int remainingBlocks = playerData.getRemainingClaimBlocks();
+                    long newClaimArea = newClaimWidth * newClaimHeight;
+                    long remainingBlocks = playerData.getRemainingClaimBlocks();
                     if (newClaimArea > remainingBlocks)
                     {
                         GriefPrevention.sendMessage(player, TextMode.Err, Messages.CreateClaimInsufficientBlocks, String.valueOf(newClaimArea - remainingBlocks));

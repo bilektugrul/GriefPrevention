@@ -126,7 +126,7 @@ public class GriefPrevention extends JavaPlugin
     public int config_claims_maxClaimsPerPlayer;                    //maximum number of claims per player
     public boolean config_claims_villagerTradingRequiresTrust;      //whether trading with a claimed villager requires permission
 
-    public int config_claims_initialBlocks;                            //the number of claim blocks a new player starts with
+    public long config_claims_initialBlocks;                            //the number of claim blocks a new player starts with
     public double config_claims_abandonReturnRatio;                 //the portion of claim blocks returned to a player when a claim is abandoned
     public int config_claims_blocksAccruedPerHour_default;            //how many additional blocks players get each hour of play (can be zero) without any special permissions
     public int config_claims_maxAccruedBlocks_default;                //the limit on accrued blocks (over time) for players without any special permissions.  doesn't limit purchased or admin-gifted blocks
@@ -1160,7 +1160,7 @@ public class GriefPrevention extends JavaPlugin
             this.dataStore.deleteClaimsForPlayer(player.getUniqueId(), false);
 
             //inform the player
-            int remainingBlocks = playerData.getRemainingClaimBlocks();
+            long remainingBlocks = playerData.getRemainingClaimBlocks();
             GriefPrevention.sendMessage(player, TextMode.Success, Messages.SuccessfulAbandon, String.valueOf(remainingBlocks));
 
             //revert any current visualization
@@ -2010,10 +2010,10 @@ public class GriefPrevention extends JavaPlugin
             if (args.length != 2) return false;
 
             //parse the adjustment amount
-            int newAmount;
+            long newAmount;
             try
             {
-                newAmount = Integer.parseInt(args[1]);
+                newAmount = Long.parseLong(args[1]);
             }
             catch (NumberFormatException numberFormatException)
             {
@@ -2353,7 +2353,7 @@ public class GriefPrevention extends JavaPlugin
             }
 
             //tell the player how many claim blocks he has left
-            int remainingBlocks = playerData.getRemainingClaimBlocks();
+            long remainingBlocks = playerData.getRemainingClaimBlocks();
             GriefPrevention.sendMessage(player, TextMode.Success, Messages.AbandonSuccess, String.valueOf(remainingBlocks));
 
             //revert any current visualization

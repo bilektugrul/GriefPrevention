@@ -146,7 +146,7 @@ public class ClaimCommand extends CommandHandler
                 GriefPrevention.sendMessage(player, TextMode.Err, Messages.CreateClaimInsufficientBlocks, String.valueOf(Integer.MAX_VALUE));
                 return true;
             }
-            int remaining = playerData.getRemainingClaimBlocks();
+            long remaining = playerData.getRemainingClaimBlocks();
             if (remaining < area)
             {
                 GriefPrevention.sendMessage(player, TextMode.Err, Messages.CreateClaimInsufficientBlocks, String.valueOf(area - remaining));

@@ -499,8 +499,8 @@ public class DatabaseDataStore extends DataStore
             //if data for this player exists, use it
             if (results.next())
             {
-                playerData.setAccruedClaimBlocks(results.getInt("accruedblocks"));
-                playerData.setBonusClaimBlocks(results.getInt("bonusblocks"));
+                playerData.setAccruedClaimBlocks(results.getLong("accruedblocks"));
+                playerData.setBonusClaimBlocks(results.getLong("bonusblocks"));
             }
         }
         catch (SQLException e)
@@ -531,21 +531,21 @@ public class DatabaseDataStore extends DataStore
             OfflinePlayer player = Bukkit.getOfflinePlayer(UUID.fromString(playerID));
 
             SimpleDateFormat sqlFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            String dateString = sqlFormat.format(new Date(player.getLastPlayed()));
+            String dateString = sqlFormat.format(new Date(System.currentTimeMillis()));
             deleteStmnt.setString(1, playerID);
             deleteStmnt.executeUpdate();
 
             insertStmnt.setString(1, playerID);
             insertStmnt.setString(2, dateString);
-            insertStmnt.setInt(3, playerData.getAccruedClaimBlocks());
-            insertStmnt.setInt(4, playerData.getBonusClaimBlocks());
+            insertStmnt.setLong(3, playerData.getAccruedClaimBlocks());
+            insertStmnt.setLong(4, playerData.getBonusClaimBlocks());
             insertStmnt.executeUpdate();
         }
         catch (SQLException e)
         {
             StringWriter errors = new StringWriter();
             e.printStackTrace(new PrintWriter(errors));
-            GriefPrevention.AddLogEntry(playerID + " " + errors.toString(), CustomLogEntryTypes.Exception);
+            GriefPrevention.AddLogEntry(playerID + " " + errors, CustomLogEntryTypes.Exception);
         }
     }
 

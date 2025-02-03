@@ -57,7 +57,7 @@ class EquipShovelProcessingTask implements Runnable
         }
 
         //tell him how many claim blocks he has available
-        int remainingBlocks = playerData.getRemainingClaimBlocks();
+        long remainingBlocks = playerData.getRemainingClaimBlocks();
         GriefPrevention.sendMessage(player, TextMode.Instr, Messages.RemainingBlocks, String.valueOf(remainingBlocks));
 
         //link to a video demo of land claiming, based on world type

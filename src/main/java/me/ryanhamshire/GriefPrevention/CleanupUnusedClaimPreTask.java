@@ -58,7 +58,7 @@ class CleanupUnusedClaimPreTask implements Runnable
         }
 
         //skip claims belonging to exempted players based on block totals in config
-        int bonusBlocks = ownerData.getBonusClaimBlocks();
+        long bonusBlocks = ownerData.getBonusClaimBlocks();
         if (bonusBlocks >= GriefPrevention.instance.config_claims_expirationExemptionBonusBlocks || bonusBlocks + ownerData.getAccruedClaimBlocks() >= GriefPrevention.instance.config_claims_expirationExemptionTotalBlocks)
         {
             GriefPrevention.AddLogEntry("Player exempt from claim expiration based on claim block counts vs. config file settings.", CustomLogEntryTypes.Debug, true);
